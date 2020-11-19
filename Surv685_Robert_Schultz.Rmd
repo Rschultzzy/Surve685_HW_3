@@ -1,0 +1,227 @@
+---
+title: "SurvMeth 685 - HW 3"
+author: "Robert Schultz"
+date: "11/17/2020"
+output: word_document
+---
+
+Homework Assignment 3 [80pt]
+(Include R code and output pertinent to your answers. Submission as a single file.)
+```{r}
+suppressPackageStartupMessages({
+    library(ggplot2)
+    library(dplyr)
+    library(magrittr)
+    library(scales)
+    library(tidyverse)
+    library(sandwich)
+    library(faraway)
+})
+```
+1. Faraway Chapter 7. Exercise 5. [15pt] 
+1) (a) [5pt]
+```{r}
+library(faraway)
+data(prostate)
+df <- prostate #Create DF that will be used later on in the ?'s
+
+head(prostate, 3) #to view variable names to use in the model below
+
+lpmod <- lm(lpsa ~lcavol + lweight + age + lbph + svi + lcp + gleason + pgg45, data = prostate)
+summary(lpmod)
+par(mfrow=c(2,2))
+plot(lpmod) #Practice looking for fit and odd points
+```
+```{r}
+x <- model.matrix(lpmod)[,-1]
+e <- eigen(t(x) %*% x)
+
+sqrt(e$val[1]/e$val)
+```
+
+Condition number appear to be larger (with a wide range), this would mean their are possible issues from more than one linear combination in the above model. 
+
+2) (b) [5pt]
+```{r}
+round(cor(df[,-9]), 2)
+```
+
+Some predictors have higher correlations on other predictors such as pgg45 and gleason as lcavol and lcp.  Both of these have correlations of over .70. Some indicators have extremely low correlations, such as lbph and lcavol with a correlation on 0.03
+
+3) (c) [5pt]
+Used the Faraway vif function 
+```{r}
+require(faraway) #Class 8.R slide 11
+vif(x)
+```
+Checking lcavol by 'hand' - both values are the same using vif and by 'hand' = 2.054115
+```{r}
+X1rsq <- summary(lm(x[,1] ~ x[,-1]))$r.squared
+1/(1-X1rsq)
+```
+
+2. Faraway Chapter 8. Exercise 4. [25pt]
+1) Test the homoscedasticity assumption using both a scatter plot between the residuals and fitted values and an F-test of equal variance below and above the fitted value of 30. [5pt]
+```{r}
+data(cars)
+head(cars, 2) #to get variable names
+
+carmod <- lm(dist ~ speed, data = cars)
+summary(carmod)
+```
+```{r}
+plot(fitted(carmod),residuals(carmod),xlab="Fitted",ylab="Residual")
+abline(h=0, v=30, lty=2, col="red")
+
+var.test(resid(carmod)[fitted(carmod)<=30],
+         resid(carmod)[fitted(carmod)>30])
+```
+Looking at our plot, does not appear to be a situation in which our error term is the same across all of our independent variables. No clear pattern emerges visually. Looking at our F-test that also appears to allow for use to reject the notion of homoscedasticity. 
+
+
+2) Report the estimate of the heteroscedastic consistent variance for the regression slope. [5pt]
+```{r}
+require(lmtest)
+#For below used code from class 8
+carmod %>% 
+  vcovHC() %>% 
+  diag() %>% 
+  sqrt()
+```
+
+3) Construct 95% confidence interval of the regression slope a. assuming homoscedasticity and b. using the results in 2.2). How do they compare? [10pt]
+```{r}
+confint(carmod)
+```
+95% CI for coefficient with heteroscedastic consistent variance estimate
+```{r}
+confint(coeftest(carmod, vcov = vcovHC(carmod)))
+```
+
+Appears our range for heteroscedastic is a bit (minimally) wider than using our first CI assuming homscedasticity. 
+4) Check for the lack of fit of the model. [5pt]
+```{r}
+carresid <- lm(resid(carmod)~factor(speed), data = cars)
+anova(carmod)
+anova(carresid)
+```
+
+Error in speed does not appear to be significant in the overall model error, (three star test) Our residuals sum sq. = 6764.8 represents our error within our residual. Everything else could be explained by speed, however, speed is not significant.
+
+3. Faraway Chapter 9. Exercise 7. [10pt]
+Fit a model with taste as the outcome variable and the rest as predictors.
+1) Use the Box-Cox method to determine the best transformation on the response. [5pt]
+```{r}
+data(cheddar, package = "faraway")
+require(MASS)
+
+lmod3 <-lm(taste ~ Acetic + H2S + Lactic, cheddar)
+ #Changed layout after looking at them individually, for ease of final presentation
+boxcox(lmod3, plotit = T)
+boxcox(lmod3, plotit = T, lambda = seq(0.0,2, by=0.1))
+
+```
+
+Appears our lambda is right around .65 or .7. Not strongly inclined to suggest a transformation from these models. 
+
+2) (a) [5pt]
+```{r}
+require(mgcv) #page 144
+lmod3 <-gam(taste~s(Acetic)+s(H2S)+s(Lactic),data=cheddar)
+par(mfrow=c(2,2)) #Changed layout after looking at them individually, for ease of final presentation
+plot(lmod3)
+```
+
+No transformation would be suggested. All three models are appearing to produce a linear like fit. 
+
+4. Faraway Chapter 10. Exercise 2. [20pt]
+1) (a) (based on predictor significance) [5pt] 
+Class 11.R slide 13
+```{r}
+data(teengamb, package = "faraway")
+lmod4 <-lm(gamble ~., teengamb)
+summary(lmod4)
+```
+
+```{r}
+lmod5 <- stepAIC(lmod4, direction = "backward")
+summary(lmod5)
+lmod5$anova
+
+for.mod <- stepAIC(lmod5, direction = "forward")
+summary(for.mod)
+for.mod$anova
+
+step.mod <- stepAIC(lmod5, direction = "both")
+summary(step.mod)
+step.mod$anova
+```
+Appears that status is not significant in this model and could actually improve the fit if removed.
+
+2) (b) [5pt]
+Used class 11.R slide 10 
+```{r}
+library(tidyverse)
+library(faraway)
+library(leaps)
+
+sub<-regsubsets(gamble~.,teengamb)
+rsub<-summary(sub)
+names(rsub)
+?regsubsets
+rsub$which
+
+aic<-dim(teengamb)[1]*log(rsub$rss/dim(teengamb)[1])+(2:5)*2
+plot(aic~I(1:4), ylab="AIC", xlab="# Predictors")
+
+tgsub <- lm(gamble ~ sex + income + verbal, data=teengamb)
+
+```
+
+Our AIC model shows that 3 predictors is the best fit and removing our variable 'status' could in fact improve fit. 
+
+3) (c) [5pt]
+```{r}
+library(leaps)
+require(leaps)
+plot(rsub$adjr2~I(1:4), ylab="R^2 Adjust", xlab="Number of Predictors")
+```
+
+Appears using 3 predictors will only very slightly impact our R^2 adjustments. So using this, appears that removing 'status' may not be that impactful for improving our model. 
+
+4) (d) [5pt]
+```{r}
+plot(rsub$cp~I(1:4), ylab="Mallow's Cp", xlab="# Predictors");abline(0,1, col="red")
+```
+5. Faraway Chapter 14. Exercise 1. [10pt]
+```{r}
+data(teengamb)
+teengamb$gender <-ifelse(teengamb$sex==1,"Female", "Male")
+by(teengamb, teengamb$gender, summary)
+
+ggplot(aes(x=status,y=gamble),data=teengamb)+
+  geom_jitter()+
+  facet_grid(~gender)+
+  geom_smooth(method="lm", colour="blue", size=0.5)
+
+teen1 <- lm(gamble ~ status*gender, teengamb)
+summary(teen1)
+
+ggplot(aes(x=income,y=gamble),data=teengamb)+
+  geom_jitter()+
+  facet_grid(~gender)+
+  geom_smooth(method="lm", colour="green", size=0.5)
+
+teen2 <- lm(gamble ~ income*gender, teengamb)
+summary(teen2)
+
+ggplot(aes(x=verbal,y=gamble),data=teengamb)+
+  geom_jitter()+
+  facet_grid(~gender)+
+  geom_smooth(method="lm", colour="red", size=0.5)
+
+teen3 <- lm(gamble ~ verbal*gender, teengamb)
+summary(teen3)
+```
+
+
